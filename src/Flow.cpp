@@ -2945,7 +2945,7 @@ void Flow::hosts_periodic_stats_update(NetworkInterface* iface, Host* cli_host,
 #ifndef HAVE_NEDGE
 #ifdef HAVE_NBPF
     /* Update profile stats */
-    if (ntop->getPro()->has_valid_license()) {
+    if (true /* license check removed: all features enabled */) {
       if (trafficProfile)
         trafficProfile->incBytes(diff_sent_bytes + diff_rcvd_bytes);
     }
@@ -3598,7 +3598,8 @@ void Flow::lua(lua_State* vm, AddressTree* allowed_nets,
 #ifdef NTOPNG_PRO
 #ifndef HAVE_NEDGE
 #ifdef HAVE_NBPF
-    if ((!mask_flow) && trafficProfile && ntop->getPro()->has_valid_license())
+    if ((!mask_flow) &&
+        trafficProfile /* license check removed: all features enabled */)
       lua_push_str_table_entry(vm, "profile", trafficProfile->getName());
 #endif
 #endif

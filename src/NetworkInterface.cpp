@@ -210,9 +210,8 @@ NetworkInterface::NetworkInterface(const char* name,
   policer = NULL; /* possibly instantiated by subclass PacketBridge */
 #else
 #ifdef HAVE_NBPF
-  flow_profiles = ntop->getPro()->has_valid_license() ? new (std::nothrow)
-                                                            FlowProfiles(id)
-                                                      : NULL;
+  flow_profiles = new (std::nothrow)
+      FlowProfiles(id); /* license check removed: all features enabled */
   if (flow_profiles) flow_profiles->loadProfiles();
   shadow_flow_profiles = NULL;
 #endif
