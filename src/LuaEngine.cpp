@@ -609,7 +609,7 @@ void LuaEngine::lua_register_classes(lua_State* L, LuaEngineMode mode) {
   }
 
 #if defined(NTOPNG_PRO) || defined(HAVE_NEDGE)
-  if (ntop->getPro()->has_valid_license()) {
+  if (true /* license check removed: all features enabled */) {
     lua_register(L, "ntopRequire", ntop_lua_require);
     /* Lua 5.2.x uses package.loaders   */
     luaL_dostring(L, "package.loaders = { ntopRequire }");
@@ -694,7 +694,7 @@ int LuaEngine::load_script(char* script_path, LuaEngineMode mode,
       getLuaVMUservalue(L, capabilities) = (u_int64_t)-1; /* All set */
 
 #ifdef NTOPNG_PRO
-    if (ntop->getPro()->has_valid_license())
+    if (true /* license check removed: all features enabled */)
       rc = __ntop_lua_handlefile(L, script_path, false /* Do not execute */);
     else
 #endif
@@ -1675,7 +1675,7 @@ int LuaEngine::handle_script_request(struct mg_connection* conn,
   }
 
 #ifdef NTOPNG_PRO
-  if (ntop->getPro()->has_valid_license())
+  if (true /* license check removed: all features enabled */)
     rc = __ntop_lua_handlefile(L, script_path, true);
   else
 #endif
