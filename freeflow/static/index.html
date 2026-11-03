@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreeFlow - free network traffic monitor</title>
+<style>
+:root{
+  --bg:#0d1117; --surface:#161b22; --elevated:#21262d; --border:#30363d;
+  --text:#e6edf3; --muted:#8b949e; --accent:#ff8f00; --accent-dark:#c56000;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;align-items:center;gap:1rem;padding:.7rem 1.2rem;background:var(--elevated);border-bottom:1px solid var(--border)}
+.logo{font-weight:700;color:var(--accent);font-size:1.15rem}
+.badge-free{background:#238636;color:#fff;border-radius:1rem;padding:.15rem .6rem;font-size:.72rem;font-weight:600}
+.controls{margin-left:auto;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+select,input,button{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:.4rem;padding:.35rem .6rem;font-size:.85rem}
+button{cursor:pointer}
+button.primary{background:var(--accent);color:#000;border-color:var(--accent-dark);font-weight:600}
+button.danger{background:#b62324;color:#fff;border-color:#7e1a1a}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;padding:1rem 1.2rem}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:.8rem 1rem}
+.kpi .label{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.kpi .value{font-size:1.35rem;font-weight:700;margin-top:.2rem}
+nav.tabs{display:flex;gap:.2rem;padding:0 1.2rem;border-bottom:1px solid var(--border)}
+nav.tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:.55rem .9rem;font-size:.9rem}
+nav.tabs button.active{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+section.tab{padding:1rem 1.2rem}
+canvas{width:100%;height:180px;background:var(--surface);border:1px solid var(--border);border-radius:.5rem}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{color:var(--muted);text-align:left;font-weight:600;padding:.45rem .6rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg)}
+td{padding:.4rem .6rem;border-bottom:1px solid var(--border-light,#21262d)}
+tr:hover td{background:var(--surface)}
+.tablewrap{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:.5rem}
+.proto-bar{display:flex;height:14px;border-radius:.3rem;overflow:hidden;margin:.6rem 0 1rem}
+.status-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:.4rem}
+.dot-on{background:#2ea043}.dot-off{background:#8b949e}
+.search{width:220px}
+.muted{color:var(--muted)}
+.small{font-size:.75rem}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">FreeFlow</span>
+  <span class="badge-free">100% FREE — no license required</span>
+  <span class="small muted"><span id="statusDot" class="status-dot dot-off"></span><span id="statusText">idle</span></span>
+  <div class="controls">
+    <select id="ifaceSel"></select>
+    <button class="primary" onclick="startIface()">Capture interface</button>
+    <input id="pcapPath" placeholder="/path/to/file.pcap" style="width:220px">
+    <button onclick="startPcap()">Load pcap</button>
+    <button class="danger" onclick="stopCap()">Stop</button>
+  </div>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Total traffic</div><div class="value" id="kBytes">0 B</div></div>
+  <div class="kpi"><div class="label">Packets</div><div class="value" id="kPkts">0</div></div>
+  <div class="kpi"><div class="label">Active flows</div><div class="value" id="kFlows">0</div></div>
+  <div class="kpi"><div class="label">Hosts</div><div class="value" id="kHosts">0</div></div>
+  <div class="kpi"><div class="label">Rate</div><div class="value" id="kRate">0 bps</div></div>
+</div>
+
+<canvas id="chart"></canvas>
+<div style="padding:0 1.2rem"><span class="small muted">bytes/sec over time</span></div>
+
+<nav class="tabs">
+  <button class="active" data-tab="flows" onclick="showTab('flows')">Flows</button>
+  <button data-tab="hosts" onclick="showTab('hosts')">Hosts</button>
+  <button data-tab="protocols" onclick="showTab('protocols')">Protocols</button>
+</nav>
+
+<section class="tab" id="tab-flows">
+  <input class="search" id="flowSearch" placeholder="Filter flows (ip, proto, host)...">
+  <div class="tablewrap"><table>
+    <thead><tr><th>Src</th><th>Dst</th><th>Proto</th><th>Service</th><th>Hostname</th><th>↑ bytes</th><th>↓ bytes</th><th>Pkts</th><th>Last seen</th></tr></thead>
+    <tbody id="flowsBody"></tbody>
+  </table></div>
+</section>
+
+<section class="tab" id="tab-hosts" style="display:none">
+  <div class="tablewrap"><table>
+    <thead><tr><th>IP</th><th>Sent</th><th>Received</th><th>Total</th><th>Pkts sent</th><th>Pkts recv</th><th>Top protocols</th></tr></thead>
+    <tbody id="hostsBody"></tbody>
+  </table></div>
+</section>
+
+<section class="tab" id="tab-protocols" style="display:none">
+  <div class="proto-bar" id="protoBar"></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Protocol</th><th>Flows</th><th>Bytes</th><th>Share</th></tr></thead>
+    <tbody id="protoBody"></tbody>
+  </table></div>
+</section>
+
+<script>
+const COLORS=['#ff8f00','#3fb950','#58a6ff','#bc8cff','#f778ba','#d2a8ff','#7ee787','#ffa657','#79c0ff','#ff7b72'];
+function fmtBytes(b){if(b==null)return'-';const u=['B','KB','MB','GB','TB'];let i=0,v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(v<10&&i?2:1)+' '+u[i]}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function ts(t){return new Date(t*1000).toLocaleTimeString()}
+
+function showTab(name){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  ['flows','hosts','protocols'].forEach(n=>document.getElementById('tab-'+n).style.display=n===name?'':'none');
+}
+
+async function api(path,opts){const r=await fetch(path,opts);if(!r.ok)throw new Error((await r.json()).detail||r.status);return r.json()}
+
+async function loadIfaces(){
+  try{const d=await api('/api/v1/interfaces');
+    const sel=document.getElementById('ifaceSel');sel.innerHTML='';
+    d.interfaces.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=i;sel.appendChild(o)});
+  }catch(e){console.error(e)}
+}
+async function startIface(){
+  const iface=document.getElementById('ifaceSel').value;
+  if(!iface)return alert('No interface selected');
+  try{await api('/api/v1/start/interface',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({iface})});refresh()}catch(e){alert(e.message)}
+}
+async function startPcap(){
+  const path=document.getElementById('pcapPath').value.trim();
+  if(!path)return alert('Enter a pcap file path on the server');
+  try{await api('/api/v1/start/pcap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});refresh()}catch(e){alert(e.message)}
+}
+async function stopCap(){try{await api('/api/v1/stop',{method:'POST'});refresh()}catch(e){alert(e.message)}}
+
+let lastStatus=null,lastTs=0;
+async function refresh(){
+  let st;
+  try{st=await api('/api/v1/status')}catch(e){return}
+  lastStatus=st;
+  document.getElementById('statusDot').className='status-dot '+(st.running?'dot-on':'dot-off');
+  document.getElementById('statusText').textContent=(st.source||'idle')+(st.running?' (capturing)':'');
+  document.getElementById('kBytes').textContent=fmtBytes(st.total_bytes);
+  document.getElementById('kPkts').textContent=st.total_packets.toLocaleString();
+  document.getElementById('kFlows').textContent=st.active_flows;
+  document.getElementById('kHosts').textContent=st.active_hosts;
+  // rate from last two timeseries buckets
+  const ts_=st.timeseries;
+  if(ts_.length>=2){const dt=ts_[ts_.length-1][0]-ts_[ts_.length-2][0];
+    if(dt>0)document.getElementById('kRate').textContent=fmtBytes(ts_[ts_.length-1][1]*8/dt)+'ps';}
+  drawChart(ts_);
+  await Promise.all([loadFlows(),loadHosts(),loadProtos()]);
+}
+
+async function loadFlows(){
+  const q=document.getElementById('flowSearch').value.trim();
+  const d=await api('/api/v1/stats/flows'+(q?('?search='+encodeURIComponent(q)):''));
+  document.getElementById('flowsBody').innerHTML=d.flows.map(f=>
+    `<tr><td>${esc(f.src)}:${f.sport}</td><td>${esc(f.dst)}:${f.dport}</td><td>${esc(f.proto)}</td>`+
+    `<td>${esc(f.protocol)}</td><td>${esc(f.hostname)}</td><td>${fmtBytes(f.bytes_up)}</td>`+
+    `<td>${fmtBytes(f.bytes_down)}</td><td>${f.packets}</td><td class="small muted">${ts(f.last_seen)}</td></tr>`).join('');
+}
+async function loadHosts(){
+  const d=await api('/api/v1/stats/hosts');
+  document.getElementById('hostsBody').innerHTML=d.hosts.map(h=>{
+    const protos=Object.entries(h.protocols||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(p=>p[0]).join(', ');
+    return `<tr><td>${esc(h.ip)}</td><td>${fmtBytes(h.bytes_sent)}</td><td>${fmtBytes(h.bytes_recv)}</td>`+
+    `<td><b>${fmtBytes(h.total_bytes)}</b></td><td>${h.pkts_sent}</td><td>${h.pkts_recv}</td><td class="small">${esc(protos)}</td></tr>`}).join('');
+}
+async function loadProtos(){
+  const d=await api('/api/v1/stats/protocols');
+  const total=d.protocols.reduce((s,p)=>s+p.bytes,0)||1;
+  document.getElementById('protoBar').innerHTML=d.protocols.slice(0,10).map((p,i)=>
+    `<div title="${esc(p.protocol)}" style="width:${(p.bytes/total*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div>`).join('');
+  document.getElementById('protoBody').innerHTML=d.protocols.map((p,i)=>
+    `<tr><td><span style="display:inline-block;width:10px;height:10px;background:${COLORS[i%COLORS.length]};border-radius:2px;margin-right:6px"></span>${esc(p.protocol)}</td>`+
+    `<td>${p.flows}</td><td>${fmtBytes(p.bytes)}</td><td>${(p.bytes/total*100).toFixed(1)}%</td></tr>`).join('');
+}
+
+function drawChart(series){
+  const c=document.getElementById('chart'),ctx=c.getContext('2d');
+  const W=c.width=c.clientWidth*devicePixelRatio,H=c.height=c.clientHeight*devicePixelRatio;
+  ctx.clearRect(0,0,W,H);
+  if(!series||series.length<2)return;
+  const vals=series.map(s=>s[1]),max=Math.max(...vals,1);
+  ctx.beginPath();ctx.strokeStyle='#ff8f00';ctx.lineWidth=1.5*devicePixelRatio;
+  series.forEach((s,i)=>{const x=i/(series.length-1)*W,y=H-(s[1]/max)*(H-20)-4;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+  ctx.stroke();
+  ctx.fillStyle='rgba(255,143,0,.12)';ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+  ctx.fillStyle='#8b949e';ctx.font=(10*devicePixelRatio)+'px sans-serif';
+  ctx.fillText(fmtBytes(max)+'ps',4,12*devicePixelRatio);
+}
+
+document.getElementById('flowSearch').addEventListener('input',()=>loadFlows());
+loadIfaces();refresh();setInterval(refresh,2000);
+</script>
+</body>
+</html>
