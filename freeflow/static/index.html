@@ -48,6 +48,13 @@ tr:hover td{background:var(--surface)}
   <span class="small muted"><span id="statusDot" class="status-dot dot-off"></span><span id="statusText">idle</span></span>
   <div class="controls">
     <select id="ifaceSel"></select>
+    <select id="backendSel" title="Capture backend">
+      <option value="auto">auto (fastest)</option>
+      <option value="afpacket">af_packet fanout</option>
+      <option value="pfring">PF_RING</option>
+      <option value="dpdk">DPDK</option>
+      <option value="scapy">scapy (slow)</option>
+    </select>
     <button class="primary" onclick="startIface()">Capture interface</button>
     <input id="pcapPath" placeholder="/path/to/file.pcap" style="width:220px">
     <button onclick="startPcap()">Load pcap</button>
@@ -116,8 +123,9 @@ async function loadIfaces(){
 }
 async function startIface(){
   const iface=document.getElementById('ifaceSel').value;
+  const backend=document.getElementById('backendSel').value||'auto';
   if(!iface)return alert('No interface selected');
-  try{await api('/api/v1/start/interface',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({iface})});refresh()}catch(e){alert(e.message)}
+  try{await api('/api/v1/start/interface',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({iface,backend})});refresh()}catch(e){alert(e.message)}
 }
 async function startPcap(){
   const path=document.getElementById('pcapPath').value.trim();
